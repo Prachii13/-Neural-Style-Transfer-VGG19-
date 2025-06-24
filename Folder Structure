@@ -1,0 +1,8 @@
+neural_style_transfer/
+├── content.jpg                     # Content image (e.g., your face/photo)
+├── style.jpg                       # Style image (e.g., painting)
+├── style_transfer.py               # Main script
+├── app.py                          # Streamlit interface
+├── requirements.txt
+├── README.md
+└── .gitignore
