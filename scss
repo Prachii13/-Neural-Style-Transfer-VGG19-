@@ -1,0 +1,72 @@
+
+---
+
+### 🎨 `style_transfer.py`
+```python
+import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from PIL import Image
+
+def load_img(path):
+    img = Image.open(path).resize((400, 400))
+    img = tf.keras.preprocessing.image.img_to_array(img)
+    img = tf.keras.applications.vgg19.preprocess_input(img)
+    return tf.convert_to_tensor(np.expand_dims(img, axis=0), dtype=tf.float32)
+
+def deprocess_img(img):
+    img = img.numpy().squeeze()
+    img += [103.939, 116.779, 123.68]
+    img = np.clip(img[..., ::-1], 0, 255).astype('uint8')
+    return img
+
+content_img = load_img("content.jpg")
+style_img = load_img("style.jpg")
+
+vgg = tf.keras.applications.VGG19(include_top=False, weights='imagenet')
+vgg.trainable = False
+
+content_layers = ['block5_conv2']
+style_layers = ['block1_conv1', 'block2_conv1', 'block3_conv1',
+                'block4_conv1', 'block5_conv1']
+
+def get_features(model, layers, img):
+    outputs = [model.get_layer(name).output for name in layers]
+    feat_model = tf.keras.Model(inputs=model.input, outputs=outputs)
+    return feat_model(img)
+
+def gram_matrix(tensor):
+    channels = int(tensor.shape[-1])
+    vectorized = tf.reshape(tensor, [-1, channels])
+    return tf.matmul(vectorized, vectorized, transpose_a=True)
+
+content_feats = get_features(vgg, content_layers, content_img)
+style_feats = get_features(vgg, style_layers, style_img)
+
+gen_img = tf.Variable(content_img)
+
+opt = tf.optimizers.Adam(learning_rate=5.0)
+
+for i in range(100):
+    with tf.GradientTape() as tape:
+        gen_feats_content = get_features(vgg, content_layers, gen_img)
+        gen_feats_style = get_features(vgg, style_layers, gen_img)
+
+        content_loss = tf.reduce_mean((gen_feats_content[0] - content_feats[0])**2)
+
+        style_loss = 0
+        for gen, style in zip(gen_feats_style, style_feats):
+            style_loss += tf.reduce_mean((gram_matrix(gen) - gram_matrix(style))**2)
+
+        total_loss = content_loss * 1e4 + style_loss * 1e-2
+
+    grads = tape.gradient(total_loss, gen_img)
+    opt.apply_gradients([(grads, gen_img)])
+    gen_img.assign(tf.clip_by_value(gen_img, -128, 128))
+
+    if i % 20 == 0:
+        print(f"Step {i}, Total Loss: {total_loss.numpy()}")
+
+final_img = deprocess_img(gen_img)
+Image.fromarray(final_img).save("stylized.jpg")
+print("✅ Stylized image saved as 'stylized.jpg'")
